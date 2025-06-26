@@ -57,7 +57,7 @@ if uploaded_file:
                     False: "Unique"
                 })
 
-                # Set index to start from 1
+                # Insert S.No column (starting from 1)
                 main_df.insert(0, "S.No", range(1, len(main_df) + 1))
 
                 st.success(f"✅ Compared '{main_sheet}' with: {', '.join(compare_sheets)}")
@@ -65,7 +65,7 @@ if uploaded_file:
 
                 # Download option
                 output = BytesIO()
-                main_df.to_excel(output, index=True)
+                main_df.to_excel(output, index=False)
                 st.download_button(
                     "📥 Download Overlap Result",
                     data=output.getvalue(),
