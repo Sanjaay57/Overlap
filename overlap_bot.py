@@ -56,12 +56,12 @@ if uploaded_file:
                     True: "Overlapped",
                     False: "Unique"
                 })
-
-                # Insert S.No column (starting from 1)
+                
+                
                 main_df.insert(0, "S.No", range(1, len(main_df) + 1))
-
                 st.success(f"✅ Compared '{main_sheet}' with: {', '.join(compare_sheets)}")
-                st.dataframe(main_df, use_container_width=True)
+                st.dataframe(main_df.style.hide(axis="index"), use_container_width=True)
+
 
                 # Download option
                 output = BytesIO()
