@@ -2,15 +2,12 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# === Page Config ===
 st.set_page_config(page_title="TN Model Schools Overlap Bot", layout="wide")
 
-# === App Title ===
 st.markdown("<h1 style='text-align: center;'>TN Model Schools Student Overlap</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='text-align: center; color: gray;'>MS CG Team</h4>", unsafe_allow_html=True)
 st.divider()
 
-# === File Upload ===
 uploaded_file = st.file_uploader("📤 Upload Excel File (.xlsx) with Multiple Sheets", type=["xlsx"])
 
 if uploaded_file:
@@ -18,7 +15,6 @@ if uploaded_file:
         all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
         sheet_names = list(all_sheets.keys())
 
-        # === Sidebar Selections ===
         st.sidebar.header("🔧 Sheet Comparison")
         main_sheet = st.sidebar.selectbox("🧩 Sheet to Check (e.g., MSE)", sheet_names)
         compare_sheets = st.sidebar.multiselect(
@@ -35,12 +31,10 @@ if uploaded_file:
                 main_df = main_df.copy()
                 main_col = main_df.columns[0]
 
-                # Clean EMIS values in main sheet
                 main_df[main_col] = main_df[main_col].apply(
                     lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
                 )
 
-                # Combine EMIS from other sheets
                 all_compare_values = set()
                 for sheet in compare_sheets:
                     comp_df = all_sheets.get(sheet, pd.DataFrame())
@@ -51,26 +45,25 @@ if uploaded_file:
                         )
                         all_compare_values.update(formatted_values)
 
-                # Compare for overlap
                 main_df["Overlap Status"] = main_df[main_col].isin(all_compare_values).map({
                     True: "Overlapped",
                     False: "Unique"
                 })
 
-                # ✅ Display with default index (0, 1, 2, ...)
+                # ✅ Start index from 1
+                main_df.index = range(1, len(main_df) + 1)
+
                 st.success(f"✅ Compared '{main_sheet}' with: {', '.join(compare_sheets)}")
                 st.dataframe(main_df, use_container_width=True)
 
-                # Download option
                 output = BytesIO()
-                main_df.to_excel(output, index=True)  # index=True for row numbers
+                main_df.to_excel(output, index=True)
                 st.download_button(
                     "📥 Download Overlap Result",
                     data=output.getvalue(),
                     file_name=f"{main_sheet}_vs_multiple_overlap.xlsx"
                 )
 
-        # === Search Section ===
         st.divider()
         st.subheader("🔎 Search Student Across All Sheets")
         search_query = st.text_input("Enter EMIS number or Name")
