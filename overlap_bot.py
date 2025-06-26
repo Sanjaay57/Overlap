@@ -58,7 +58,7 @@ if uploaded_file:
                 })
 
                 # Set index to start from 1
-                main_df.index = range(1, len(main_df) + 1)
+                main_df.insert(0, "S.No", range(1, len(main_df) + 1))
 
                 st.success(f"✅ Compared '{main_sheet}' with: {', '.join(compare_sheets)}")
                 st.dataframe(main_df, use_container_width=True)
