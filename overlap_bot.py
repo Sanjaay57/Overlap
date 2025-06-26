@@ -57,16 +57,13 @@ if uploaded_file:
                     False: "Unique"
                 })
 
-                # Insert S.No column (starting from 1)
-                main_df.insert(0, "S.No", range(1, len(main_df) + 1))
-
-                # ✅ Hide the default index
+                # ✅ Display with default index (0, 1, 2, ...)
                 st.success(f"✅ Compared '{main_sheet}' with: {', '.join(compare_sheets)}")
-                st.dataframe(main_df.style.hide(axis="index"), use_container_width=True)
+                st.dataframe(main_df, use_container_width=True)
 
                 # Download option
                 output = BytesIO()
-                main_df.to_excel(output, index=False)
+                main_df.to_excel(output, index=True)  # index=True for row numbers
                 st.download_button(
                     "📥 Download Overlap Result",
                     data=output.getvalue(),
