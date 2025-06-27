@@ -3,7 +3,6 @@ import pandas as pd
 from io import BytesIO
 
 st.set_page_config(page_title="TN Model Schools Overlap Bot", layout="wide")
-
 st.markdown("<h1 style='text-align: center;'>TN Model Schools Student Overlap</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='text-align: center; color: gray;'>MS CG Team</h4>", unsafe_allow_html=True)
 st.divider()
@@ -23,47 +22,54 @@ if uploaded_file:
         )
 
         if st.sidebar.button("🔍 Compare Now"):
-            main_df = all_sheets[main_sheet]
-
-            if main_df.empty or main_df.shape[1] == 0:
-                st.error("❌ The main sheet is empty or has no columns.")
+            main_df = all_sheets[main_sheet].copy()
+            if main_df.empty or main_df.shape[1] < 2:
+                st.error("❌ The main sheet must have at least 2 columns (EMIS and Name).")
             else:
-                main_df = main_df.copy()
-                main_col = main_df.columns[0]
+                emis_col = main_df.columns[0]
+                name_col = main_df.columns[2] if main_df.shape[1] > 2 else main_df.columns[1]
 
-                main_df[main_col] = main_df[main_col].apply(
+                main_df[emis_col] = main_df[emis_col].apply(
                     lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
                 )
 
-                all_compare_values = set()
+                result_df = main_df[[emis_col, name_col]].copy()
+
+                match_found = []
+
                 for sheet in compare_sheets:
                     comp_df = all_sheets.get(sheet, pd.DataFrame())
                     if not comp_df.empty and comp_df.shape[1] > 0:
-                        comp_col = comp_df.columns[0]
-                        formatted_values = comp_df[comp_col].dropna().apply(
+                        comp_emis_col = comp_df.columns[0]
+                        comp_df[comp_emis_col] = comp_df[comp_emis_col].dropna().apply(
                             lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
                         )
-                        all_compare_values.update(formatted_values)
+                        compare_values = set(comp_df[comp_emis_col].values)
+                        result_df[sheet] = result_df[emis_col].apply(lambda x: x if x in compare_values else None)
+                        match_found.append(result_df[sheet].notna())
 
-                main_df["Overlap Status"] = main_df[main_col].isin(all_compare_values).map({
-                    True: "Overlapped",
-                    False: "Unique"
-                })
+                if match_found:
+                    # Combine all match_found boolean Series to one Series
+                    overlap_status = pd.concat(match_found, axis=1).any(axis=1).map({True: "Overlapped", False: "Unique"})
+                    result_df["Overlap Status"] = overlap_status
+                else:
+                    result_df["Overlap Status"] = "Unique"
 
-                # ✅ Start index from 1
-                main_df.index = range(1, len(main_df) + 1)
+                result_df.index = range(1, len(result_df) + 1)
 
-                st.success(f"✅ Compared '{main_sheet}' with: {', '.join(compare_sheets)}")
-                st.dataframe(main_df, use_container_width=True)
+                st.success(f"✅ '{main_sheet}' compared with: {', '.join(compare_sheets)}")
+                st.dataframe(result_df, use_container_width=True)
 
+                # Download as Excel
                 output = BytesIO()
-                main_df.to_excel(output, index=True)
+                result_df.to_excel(output, index=False)
                 st.download_button(
                     "📥 Download Overlap Result",
                     data=output.getvalue(),
-                    file_name=f"{main_sheet}_vs_multiple_overlap.xlsx"
+                    file_name=f"{main_sheet}_vs_overlap.xlsx"
                 )
 
+        # === Search Functionality ===
         st.divider()
         st.subheader("🔎 Search Student Across All Sheets")
         search_query = st.text_input("Enter EMIS number or Name")
