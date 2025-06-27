@@ -68,10 +68,10 @@ if uploaded_file:
                 else:
                     result_df["Overlap Status"] = "Unique"
 
-                result_df.index = range(1, len(result_df) + 1)
-
+                # ✅ Add S.No column and hide default index
+                result_df.insert(0, "S.No", range(1, len(result_df) + 1))
                 st.success(f"✅ '{main_sheet}' compared with: {', '.join(compare_sheets)}")
-                st.dataframe(result_df, use_container_width=True)
+                st.dataframe(result_df.style.hide(axis="index"), use_container_width=True)
 
                 # Excel download
                 output = BytesIO()
