@@ -51,39 +51,27 @@ try:
 
     st.divider()
 
-    # === Sidebar Section ===
+    # === Sidebar Comparison UI ===
     st.sidebar.header("🔧 Sheet Comparison")
     main_sheet = st.sidebar.selectbox("🧩 Sheet to Check (e.g., MSE)", sheet_names)
 
     available_compare_sheets = [s for s in sheet_names if s != main_sheet]
-    compare_options = ["All"] + available_compare_sheets
 
-    # Session State Init
-    if "compare_selection" not in st.session_state:
-        st.session_state.compare_selection = []
-
-    rerun_needed = False
-
-    selected_compare = st.sidebar.multiselect(
-        "📌 Compare Against Sheets",
-        options=compare_options,
-        default=st.session_state.compare_selection
+    compare_mode = st.sidebar.selectbox(
+        "🔽 Compare Mode",
+        ["Compare with All Sheets", "Select Sheets Manually"]
     )
 
-    # Handle "All" logic and trigger rerun
-    if "All" in selected_compare and st.session_state.compare_selection != ["All"]:
-        st.session_state.compare_selection = ["All"]
-        rerun_needed = True
-    elif "All" not in selected_compare:
-        st.session_state.compare_selection = selected_compare
+    if compare_mode == "Select Sheets Manually":
+        selected_sheets = st.sidebar.multiselect(
+            "📌 Select Sheets to Compare",
+            options=available_compare_sheets,
+            default=[]
+        )
+    else:
+        selected_sheets = available_compare_sheets  # All except the main sheet
 
-    if rerun_needed:
-        # simulate rerun
-        st.experimental_set_query_params(rerun=str(pd.Timestamp.now()))
-        st.stop()
-
-    selected_sheets = available_compare_sheets if "All" in st.session_state.compare_selection else st.session_state.compare_selection
-
+    # === Comparison Logic ===
     if st.sidebar.button("🔍 Compare Now"):
         main_df = all_sheets[main_sheet].copy()
 
@@ -123,7 +111,7 @@ try:
             st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
             st.dataframe(result_df, use_container_width=True)
 
-            # === Export to Excel with Column Width Fix ===
+            # === Export to Excel with Auto Column Width ===
             output = BytesIO()
             wb = openpyxl.Workbook()
             ws = wb.active
