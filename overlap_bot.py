@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+import openpyxl
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 # === UI Setup ===
 st.set_page_config(page_title="TN Model Schools Overlap Bot", layout="wide")
@@ -15,11 +17,34 @@ if uploaded_file:
         all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
         sheet_names = list(all_sheets.keys())
 
+        # === Search Feature (Top Section) ===
+        st.subheader("🔎 Search Student Across All Sheets")
+        search_query = st.text_input("Enter EMIS number or Name")
+
+        if search_query:
+            found_in = []
+            for sheet_name, df in all_sheets.items():
+                if df.empty or df.shape[1] == 0:
+                    continue
+                search_col = df.columns[0]
+                values = df[search_col].dropna().apply(
+                    lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
+                )
+                if search_query.strip() in values.values:
+                    found_in.append(sheet_name)
+
+            if found_in:
+                st.success(f"✅ '{search_query}' found in: {', '.join(found_in)}")
+            else:
+                st.warning(f"❌ '{search_query}' not found in any sheet")
+
+        st.divider()
+
+        # === Sheet Comparison ===
         st.sidebar.header("🔧 Sheet Comparison")
         main_sheet = st.sidebar.selectbox("🧩 Sheet to Check (e.g., MSE)", sheet_names)
 
         available_compare_sheets = [s for s in sheet_names if s != main_sheet]
-
         mode = st.sidebar.selectbox("🔽 Select Compare Mode", ["Select sheets manually", "Compare with All"])
 
         if mode == "Select sheets manually":
@@ -29,7 +54,7 @@ if uploaded_file:
                 default=[]
             )
         else:
-            selected_sheets = available_compare_sheets  # All sheets except main
+            selected_sheets = available_compare_sheets
 
         if st.sidebar.button("🔍 Compare Now"):
             main_df = all_sheets[main_sheet].copy()
@@ -65,42 +90,34 @@ if uploaded_file:
                 else:
                     result_df["Overlap Status"] = "Unique"
 
-                result_df.index = range(1, len(result_df) + 1)
+                result_df.insert(0, "S.No", range(1, len(result_df) + 1))
 
                 st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
                 st.dataframe(result_df, use_container_width=True)
 
+                # === Auto-adjust Excel Column Widths ===
                 output = BytesIO()
-                result_df.to_excel(output, index=True)
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = "Overlap Result"
+
+                for r in dataframe_to_rows(result_df, index=False, header=True):
+                    ws.append(r)
+
+                for col in ws.columns:
+                    max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
+                    adjusted_width = max_length + 2
+                    ws.column_dimensions[col[0].column_letter].width = adjusted_width
+
+                wb.save(output)
                 st.download_button(
                     "📥 Download Overlap Result",
                     data=output.getvalue(),
                     file_name=f"{main_sheet}_vs_overlap.xlsx"
                 )
 
-        # === Search Feature ===
-        st.divider()
-        st.subheader("🔎 Search Student Across All Sheets")
-        search_query = st.text_input("Enter EMIS number or Name")
-
-        if search_query:
-            found_in = []
-            for sheet_name, df in all_sheets.items():
-                if df.empty or df.shape[1] == 0:
-                    continue
-                search_col = df.columns[0]
-                values = df[search_col].dropna().apply(
-                    lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
-                )
-                if search_query.strip() in values.values:
-                    found_in.append(sheet_name)
-
-            if found_in:
-                st.success(f"✅ '{search_query}' found in: {', '.join(found_in)}")
-            else:
-                st.warning(f"❌ '{search_query}' not found in any sheet")
-
     except Exception as e:
         st.error(f"❌ Error reading file: {e}")
+
 else:
     st.info("📁 Please upload a multi-sheet Excel file to get started.")
