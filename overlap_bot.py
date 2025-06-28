@@ -8,6 +8,10 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 st.set_page_config(page_title="TN Model Schools Overlap Bot", layout="wide")
 st.markdown("<h1 style='text-align: center;'>TN Model Schools Student Overlap</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='text-align: center; color: gray;'>MS CG Team</h4>", unsafe_allow_html=True)
+
+# === Search Feature (Immediately after header) ===
+search_query = st.text_input("🔎 Search Student Across All Sheets (Enter EMIS number or Name)")
+
 st.divider()
 
 uploaded_file = st.file_uploader("📤 Upload Excel File (.xlsx) with Multiple Sheets", type=["xlsx"])
@@ -17,10 +21,7 @@ if uploaded_file:
         all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
         sheet_names = list(all_sheets.keys())
 
-        # === Search Feature (Top Section) ===
-        st.subheader("🔎 Search Student Across All Sheets")
-        search_query = st.text_input("Enter EMIS number or Name")
-
+        # === Search Execution ===
         if search_query:
             found_in = []
             for sheet_name, df in all_sheets.items():
@@ -45,16 +46,16 @@ if uploaded_file:
         main_sheet = st.sidebar.selectbox("🧩 Sheet to Check (e.g., MSE)", sheet_names)
 
         available_compare_sheets = [s for s in sheet_names if s != main_sheet]
-        mode = st.sidebar.selectbox("🔽 Select Compare Mode", ["Select sheets manually", "Compare with All"])
+        compare_options = ["All"] + available_compare_sheets
 
-        if mode == "Select sheets manually":
-            selected_sheets = st.sidebar.multiselect(
-                "📌 Compare Against Sheets",
-                available_compare_sheets,
-                default=[]
-            )
-        else:
+        # Smart multiselect with logic
+        selected_compare = st.sidebar.multiselect("📌 Compare Against Sheets", options=compare_options)
+
+        if "All" in selected_compare:
             selected_sheets = available_compare_sheets
+            st.sidebar.info("✅ 'All' selected. All sheets will be compared.")
+        else:
+            selected_sheets = selected_compare
 
         if st.sidebar.button("🔍 Compare Now"):
             main_df = all_sheets[main_sheet].copy()
@@ -95,7 +96,7 @@ if uploaded_file:
                 st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
                 st.dataframe(result_df, use_container_width=True)
 
-                # === Auto-adjust Excel Column Widths ===
+                # Auto-adjust Excel Column Widths
                 output = BytesIO()
                 wb = openpyxl.Workbook()
                 ws = wb.active
@@ -118,6 +119,5 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"❌ Error reading file: {e}")
-
 else:
     st.info("📁 Please upload a multi-sheet Excel file to get started.")
