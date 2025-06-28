@@ -106,8 +106,6 @@ try:
             else:
                 result_df["Overlap Status"] = "Unique"
 
-            result_df.insert(0, "S.No", range(1, len(result_df) + 1))
-
             st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
             st.dataframe(result_df, use_container_width=True)
 
