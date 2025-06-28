@@ -106,6 +106,9 @@ try:
             else:
                 result_df["Overlap Status"] = "Unique"
 
+            # Reset index to start at 1 for display and Excel
+            result_df.index = range(1, len(result_df) + 1)
+
             st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
             st.dataframe(result_df, use_container_width=True)
 
@@ -115,7 +118,7 @@ try:
             ws = wb.active
             ws.title = "Overlap Result"
 
-            for r in dataframe_to_rows(result_df, index=False, header=True):
+            for r in dataframe_to_rows(result_df.reset_index(), index=False, header=True):
                 ws.append(r)
 
             for col in ws.columns:
