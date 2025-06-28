@@ -4,28 +4,29 @@ from io import BytesIO
 import openpyxl
 from openpyxl.utils.dataframe import dataframe_to_rows
 
+# === UI Setup ===
 st.set_page_config(page_title="TN Model Schools Overlap Bot", layout="wide")
 st.markdown("<h1 style='text-align: center;'>TN Model Schools Student Overlap</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='text-align: center; color: gray;'>MS CG Team</h4>", unsafe_allow_html=True)
 
 # === Centered Search Box ===
-c1, c2, c3 = st.columns([1, 2, 1])
-with c2:
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
     search_query = st.text_input("🔍 Search by EMIS / Name", placeholder="Enter EMIS number or Name")
 
 # === Centered File Upload ===
-c4, c5, c6 = st.columns([1, 2, 1])
-with c5:
+col4, col5, col6 = st.columns([1, 2, 1])
+with col5:
     uploaded_file = st.file_uploader("📤 Upload Excel File", type=["xlsx"], label_visibility="visible")
 
+# === Centered Info Box if no file uploaded ===
 if not uploaded_file:
-    with st.container():
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.info("📁 Please upload a multi-sheet Excel file to get started.")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.info("📁 Please upload a multi-sheet Excel file to get started.")
     st.stop()
 
-# === Main Logic ===
+# === File Processing ===
 try:
     all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
     sheet_names = list(all_sheets.keys())
@@ -50,32 +51,38 @@ try:
 
     st.divider()
 
-    # === Sidebar Comparison ===
+    # === Sidebar Section ===
     st.sidebar.header("🔧 Sheet Comparison")
     main_sheet = st.sidebar.selectbox("🧩 Sheet to Check (e.g., MSE)", sheet_names)
 
     available_compare_sheets = [s for s in sheet_names if s != main_sheet]
     compare_options = ["All"] + available_compare_sheets
 
-    if "Compare Against Sheets" not in st.session_state:
-        st.session_state["Compare Against Sheets"] = []
+    # Session State Init
+    if "compare_selection" not in st.session_state:
+        st.session_state.compare_selection = []
+
+    rerun_needed = False
 
     selected_compare = st.sidebar.multiselect(
         "📌 Compare Against Sheets",
         options=compare_options,
-        default=st.session_state["Compare Against Sheets"]
+        default=st.session_state.compare_selection
     )
 
-    # Auto-close dropdown when 'All' is selected
-    if "All" in selected_compare and st.session_state["Compare Against Sheets"] != ["All"]:
-        st.session_state["Compare Against Sheets"] = ["All"]
-        st.experimental_rerun()
+    # Handle "All" logic and trigger rerun
+    if "All" in selected_compare and st.session_state.compare_selection != ["All"]:
+        st.session_state.compare_selection = ["All"]
+        rerun_needed = True
+    elif "All" not in selected_compare:
+        st.session_state.compare_selection = selected_compare
 
-    # Track valid selection
-    if "All" not in selected_compare:
-        st.session_state["Compare Against Sheets"] = selected_compare
+    if rerun_needed:
+        # simulate rerun
+        st.experimental_set_query_params(rerun=str(pd.Timestamp.now()))
+        st.stop()
 
-    selected_sheets = available_compare_sheets if "All" in selected_compare else selected_compare
+    selected_sheets = available_compare_sheets if "All" in st.session_state.compare_selection else st.session_state.compare_selection
 
     if st.sidebar.button("🔍 Compare Now"):
         main_df = all_sheets[main_sheet].copy()
@@ -116,7 +123,7 @@ try:
             st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
             st.dataframe(result_df, use_container_width=True)
 
-            # === Export to Excel with Full Column Width ===
+            # === Export to Excel with Column Width Fix ===
             output = BytesIO()
             wb = openpyxl.Workbook()
             ws = wb.active
