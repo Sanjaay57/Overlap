@@ -9,19 +9,24 @@ st.set_page_config(page_title="TN Model Schools Overlap Bot", layout="wide")
 st.markdown("<h1 style='text-align: center;'>TN Model Schools Student Overlap</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='text-align: center; color: gray;'>MS CG Team</h4>", unsafe_allow_html=True)
 
-# === Search Feature (Immediately after header) ===
-search_query = st.text_input("🔎 Search Student Across All Sheets (Enter EMIS number or Name)")
+# === Centered Search Box ===
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    search_query = st.text_input("🔍 Search by EMIS / Name", placeholder="Enter EMIS number or Name")
+
+# === Centered File Upload ===
+col4, col5, col6 = st.columns([1, 2, 1])
+with col5:
+    uploaded_file = st.file_uploader("📤 Upload Excel File", type=["xlsx"], label_visibility="visible")
 
 st.divider()
-
-uploaded_file = st.file_uploader("📤 Upload Excel File (.xlsx) with Multiple Sheets", type=["xlsx"])
 
 if uploaded_file:
     try:
         all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
         sheet_names = list(all_sheets.keys())
 
-        # === Search Execution ===
+        # === Execute Search ===
         if search_query:
             found_in = []
             for sheet_name, df in all_sheets.items():
@@ -41,21 +46,31 @@ if uploaded_file:
 
         st.divider()
 
-        # === Sheet Comparison ===
+        # === Sheet Comparison Sidebar ===
         st.sidebar.header("🔧 Sheet Comparison")
         main_sheet = st.sidebar.selectbox("🧩 Sheet to Check (e.g., MSE)", sheet_names)
 
         available_compare_sheets = [s for s in sheet_names if s != main_sheet]
         compare_options = ["All"] + available_compare_sheets
 
-        # Smart multiselect with logic
-        selected_compare = st.sidebar.multiselect("📌 Compare Against Sheets", options=compare_options)
+        # Maintain session for dropdown behavior
+        if "Compare Against Sheets" not in st.session_state:
+            st.session_state["Compare Against Sheets"] = []
 
+        selected_compare = st.sidebar.multiselect(
+            "📌 Compare Against Sheets",
+            options=compare_options,
+            default=st.session_state["Compare Against Sheets"]
+        )
+
+        # Enforce "All" logic
         if "All" in selected_compare:
-            selected_sheets = available_compare_sheets
-            st.sidebar.info("✅ 'All' selected. All sheets will be compared.")
+            selected_compare = ["All"]
+            st.session_state["Compare Against Sheets"] = ["All"]
         else:
-            selected_sheets = selected_compare
+            st.session_state["Compare Against Sheets"] = selected_compare
+
+        selected_sheets = available_compare_sheets if "All" in selected_compare else selected_compare
 
         if st.sidebar.button("🔍 Compare Now"):
             main_df = all_sheets[main_sheet].copy()
@@ -96,7 +111,7 @@ if uploaded_file:
                 st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
                 st.dataframe(result_df, use_container_width=True)
 
-                # Auto-adjust Excel Column Widths
+                # === Export to Excel with Auto Column Width ===
                 output = BytesIO()
                 wb = openpyxl.Workbook()
                 ws = wb.active
@@ -107,10 +122,10 @@ if uploaded_file:
 
                 for col in ws.columns:
                     max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
-                    adjusted_width = max_length + 2
-                    ws.column_dimensions[col[0].column_letter].width = adjusted_width
+                    ws.column_dimensions[col[0].column_letter].width = max_length + 2
 
                 wb.save(output)
+
                 st.download_button(
                     "📥 Download Overlap Result",
                     data=output.getvalue(),
@@ -119,5 +134,6 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"❌ Error reading file: {e}")
+
 else:
     st.info("📁 Please upload a multi-sheet Excel file to get started.")
