@@ -4,7 +4,7 @@ from io import BytesIO
 import openpyxl
 from openpyxl.utils.dataframe import dataframe_to_rows
 
-# === UI Setup ===
+# === Page Setup ===
 st.set_page_config(page_title="TN Model Schools Overlap Bot", layout="wide")
 st.markdown("<h1 style='text-align: center;'>TN Model Schools Student Overlap</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='text-align: center; color: gray;'>MS CG Team</h4>", unsafe_allow_html=True)
@@ -17,7 +17,7 @@ with col2:
 # === Centered File Upload ===
 col4, col5, col6 = st.columns([1, 2, 1])
 with col5:
-    uploaded_file = st.file_uploader("📤 Upload Excel File", type=["xlsx"], label_visibility="visible")
+    uploaded_file = st.file_uploader("📤 Upload Excel File", type=["xlsx"])
 
 # === Info Box If No File Uploaded ===
 if not uploaded_file:
@@ -29,7 +29,7 @@ try:
     all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
     sheet_names = list(all_sheets.keys())
 
-    # === Search Functionality ===
+    # === Search Box Logic ===
     if search_query:
         found_in = []
         for sheet_name, df in all_sheets.items():
@@ -49,9 +49,10 @@ try:
 
     st.divider()
 
-    # === Sidebar for Comparison Options ===
+    # === Sidebar Comparison Options ===
     st.sidebar.header("🔧 Sheet Comparison")
-    main_sheet = st.sidebar.selectbox("🧩 Sheet to Check (e.g., MSE)", sheet_names)
+    main_sheet = st.sidebar.selectbox("🧩 Main Sheet (with full data)", sheet_names)
+
     compare_mode = st.sidebar.selectbox("🔽 Compare Mode", ["Compare with All Sheets", "Select Sheets Manually"])
     available_compare_sheets = [s for s in sheet_names if s != main_sheet]
 
@@ -61,45 +62,44 @@ try:
         else available_compare_sheets
     )
 
-    # === Comparison Logic ===
+    # === Compare Logic ===
     if st.sidebar.button("🔍 Compare Now"):
         main_df = all_sheets[main_sheet].copy()
 
-        if main_df.empty or main_df.shape[1] < 2:
-            st.error("❌ The main sheet must have at least 2 columns (EMIS and Name).")
+        if main_df.empty or 'EMIS No' not in main_df.columns:
+            st.error("❌ Main sheet must have 'EMIS No' column.")
         else:
-            emis_col = main_df.columns[0]
-            main_df[emis_col] = main_df[emis_col].apply(
+            # Clean EMIS No in main sheet
+            main_df['EMIS No'] = main_df['EMIS No'].dropna().apply(
                 lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
             )
 
-            # Track matches
-            match_found = []
-
+            # Collect all EMIS from selected sheets
+            all_emis = set()
             for sheet in selected_sheets:
                 comp_df = all_sheets.get(sheet, pd.DataFrame())
-                if not comp_df.empty and comp_df.shape[1] > 0:
-                    comp_emis_col = comp_df.columns[0]
-                    comp_df[comp_emis_col] = comp_df[comp_emis_col].dropna().apply(
+                if 'EMIS No' in comp_df.columns:
+                    comp_df['EMIS No'] = comp_df['EMIS No'].dropna().apply(
                         lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
                     )
-                    compare_values = set(comp_df[comp_emis_col].values)
-                    match_found.append(main_df[emis_col].isin(compare_values))
+                    all_emis.update(comp_df['EMIS No'].values)
 
-            if match_found:
-                main_df["Overlap Status"] = pd.concat(match_found, axis=1).any(axis=1).map({
-                    True: "Overlapped", False: "Unique"
-                })
-            else:
-                main_df["Overlap Status"] = "Unique"
+            # Add Overlap Status
+            main_df['Overlap Status'] = main_df['EMIS No'].apply(
+                lambda x: 'Overlapped' if x in all_emis else 'Unique'
+            )
 
-            # Reset index for display
+            # Sort: Overlapped on top
+            main_df.sort_values(by='Overlap Status', ascending=True, inplace=True)
+
+            # Reset index
             main_df.index = range(1, len(main_df) + 1)
 
+            # Show in Streamlit
             st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
             st.dataframe(main_df, use_container_width=True)
 
-            # === Export to Excel ===
+            # === Excel Download ===
             output = BytesIO()
             wb = openpyxl.Workbook()
             ws = wb.active
@@ -121,4 +121,4 @@ try:
             )
 
 except Exception as e:
-    st.error(f"❌ Error reading file: {e}")
+    st.error(f"❌ Error processing file: {e}")
