@@ -4,119 +4,134 @@ from io import BytesIO
 import openpyxl
 from openpyxl.utils.dataframe import dataframe_to_rows
 
-st.set_page_config(page_title="MS Number Overlap Checker", layout="wide")
-st.title("🔍 MS Number Overlap Checker")
-st.markdown("Compare a student list against a main database and get full details if matched.")
+# === UI Setup ===
+st.set_page_config(page_title="TN Model Schools Overlap Bot", layout="wide")
+st.markdown("<h1 style='text-align: center;'>TN Model Schools Student Overlap</h1>", unsafe_allow_html=True)
+st.markdown("<h4 style='text-align: center; color: gray;'>MS CG Team</h4>", unsafe_allow_html=True)
 
-uploaded_file = st.file_uploader("📤 Upload Excel File (with at least 2 sheets)", type=["xlsx"])
+# === Centered Search Box ===
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    search_query = st.text_input("🔍 Search by EMIS / Name", placeholder="Enter EMIS number or Name")
 
-if uploaded_file:
-    try:
-        # Load all sheets
-        all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
-        sheet_names = list(all_sheets.keys())
+# === Centered File Upload ===
+col4, col5, col6 = st.columns([1, 2, 1])
+with col5:
+    uploaded_file = st.file_uploader("📤 Upload Excel File", type=["xlsx"], label_visibility="visible")
 
-        # User selection for main & compare sheet
-        col1, col2 = st.columns(2)
-        with col1:
-            main_sheet_name = st.selectbox("📚 Select Main Sheet (with full student details)", sheet_names)
-        with col2:
-            compare_sheet_name = st.selectbox("📝 Select Compare Sheet (with MS numbers)", sheet_names)
+# === Centered Info Box if no file uploaded ===
+if not uploaded_file:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.info("📁 Please upload a multi-sheet Excel file to get started.")
+    st.stop()
 
-        # Proceed only if different sheets selected
-        if main_sheet_name == compare_sheet_name:
-            st.warning("⚠️ Please select two different sheets.")
-            st.stop()
+# === File Processing ===
+try:
+    all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
+    sheet_names = list(all_sheets.keys())
 
-        if st.button("🔎 Compare"):
-            # Load sheets
-            main_df = all_sheets[main_sheet_name].copy()
-            compare_df = all_sheets[compare_sheet_name].copy()
+    # === Execute Search ===
+    if search_query:
+        found_in = []
+        for sheet_name, df in all_sheets.items():
+            if df.empty or df.shape[1] == 0:
+                continue
+            search_col = df.columns[0]
+            values = df[search_col].dropna().apply(
+                lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
+            )
+            if search_query.strip() in values.values:
+                found_in.append(sheet_name)
 
-            # Clean column headers
-            main_df.columns = main_df.columns.str.strip()
-            compare_df.columns = compare_df.columns.str.strip()
+        if found_in:
+            st.success(f"✅ '{search_query}' found in: {', '.join(found_in)}")
+        else:
+            st.warning(f"❌ '{search_query}' not found in any sheet")
 
-            # Identify MS number column in each sheet
-            ms_col_main = main_df.columns[1]  # assume 2nd column in main
-            ms_col_compare = compare_df.columns[0]  # assume 1st column in compare
+    st.divider()
 
-            # Normalize MS numbers
-            main_df[ms_col_main] = main_df[ms_col_main].apply(lambda x: str(int(x)) if isinstance(x, float) else str(x).strip())
-            compare_df[ms_col_compare] = compare_df[ms_col_compare].apply(lambda x: str(int(x)) if isinstance(x, float) else str(x).strip())
+    # === Sidebar Comparison UI ===
+    st.sidebar.header("🔧 Sheet Comparison")
+    main_sheet = st.sidebar.selectbox("🧩 Sheet to Check (e.g., MSE)", sheet_names)
 
-            # Lookup setup
-            lookup_df = main_df.set_index(ms_col_main)
+    available_compare_sheets = [s for s in sheet_names if s != main_sheet]
 
-            # Fields to extract
-            expected_fields = ['MS Number', 'Student Name', 'District', 'Institution Name', 'Campus', 'Course']
-            column_map = {
-                'MS Number': ms_col_main,
-                'Student Name': 'Student Name',
-                'District': 'District',
-                'Institution Name': 'Institution Name',
-                'Campus': 'Campus',
-                'Course': 'Course'
-            }
+    compare_mode = st.sidebar.selectbox(
+        "🔽 Compare Mode",
+        ["Compare with All Sheets", "Select Sheets Manually"]
+    )
 
-            # Check all required fields exist
-            missing = [v for k, v in column_map.items() if v not in main_df.columns]
-            if missing:
-                st.error(f"❌ Missing columns in main sheet: {missing}")
-                st.stop()
+    if compare_mode == "Select Sheets Manually":
+        selected_sheets = st.sidebar.multiselect(
+            "📌 Select Sheets to Compare",
+            options=available_compare_sheets,
+            default=[]
+        )
+    else:
+        selected_sheets = available_compare_sheets  # All except the main sheet
 
-            # Build result
-            result = []
-            for _, row in compare_df.iterrows():
-                ms_number = row[ms_col_compare]
-                if ms_number in lookup_df.index:
-                    match = lookup_df.loc[ms_number]
-                    result.append({
-                        "MS Number": ms_number,
-                        "Student Name": match.get(column_map['Student Name'], ""),
-                        "District": match.get(column_map['District'], ""),
-                        "Institution Name": match.get(column_map['Institution Name'], ""),
-                        "Campus": match.get(column_map['Campus'], ""),
-                        "Course": match.get(column_map['Course'], ""),
-                        "Status": "Overlapped"
-                    })
-                else:
-                    result.append({
-                        "MS Number": ms_number,
-                        "Student Name": "",
-                        "District": "",
-                        "Institution Name": "",
-                        "Campus": "",
-                        "Course": "",
-                        "Status": "Unique"
-                    })
+    # === Comparison Logic ===
+    if st.sidebar.button("🔍 Compare Now"):
+        main_df = all_sheets[main_sheet].copy()
 
-            result_df = pd.DataFrame(result)
+        if main_df.empty or main_df.shape[1] < 2:
+            st.error("❌ The main sheet must have at least 2 columns (EMIS and Name).")
+        else:
+            emis_col = main_df.columns[0]
+            name_col = main_df.columns[2] if main_df.shape[1] > 2 else main_df.columns[1]
+
+            main_df[emis_col] = main_df[emis_col].apply(
+                lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
+            )
+
+            result_df = main_df[[emis_col, name_col]].copy()
+            match_found = []
+
+            for sheet in selected_sheets:
+                comp_df = all_sheets.get(sheet, pd.DataFrame())
+                if not comp_df.empty and comp_df.shape[1] > 0:
+                    comp_emis_col = comp_df.columns[0]
+                    comp_df[comp_emis_col] = comp_df[comp_emis_col].dropna().apply(
+                        lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
+                    )
+                    compare_values = set(comp_df[comp_emis_col].values)
+                    result_df[sheet] = result_df[emis_col].apply(lambda x: x if x in compare_values else None)
+                    match_found.append(result_df[sheet].notna())
+
+            if match_found:
+                result_df["Overlap Status"] = pd.concat(match_found, axis=1).any(axis=1).map({
+                    True: "Overlapped", False: "Unique"
+                })
+            else:
+                result_df["Overlap Status"] = "Unique"
+
+            # Reset index to start at 1 for display and Excel
             result_df.index = range(1, len(result_df) + 1)
 
-            st.success("✅ Comparison complete.")
+            st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
             st.dataframe(result_df, use_container_width=True)
 
-            # Export to Excel
+            # === Export to Excel with Auto Column Width ===
             output = BytesIO()
             wb = openpyxl.Workbook()
             ws = wb.active
-            ws.title = "MS_Compare_Result"
+            ws.title = "Overlap Result"
 
             for r in dataframe_to_rows(result_df.reset_index(), index=False, header=True):
                 ws.append(r)
 
             for col in ws.columns:
-                max_len = max(len(str(cell.value)) if cell.value else 0 for cell in col)
-                ws.column_dimensions[col[0].column_letter].width = max_len + 3
+                max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
+                ws.column_dimensions[col[0].column_letter].width = max_length + 2
 
             wb.save(output)
 
             st.download_button(
-                label="📥 Download Result Excel",
+                "📥 Download Overlap Result",
                 data=output.getvalue(),
-                file_name="MS_Number_Comparison_Result.xlsx"
+                file_name=f"{main_sheet}_vs_overlap.xlsx"
             )
 
-    except Exception as e:
-        st.error(f"❌ Something went wrong: {e}")
+except Exception as e:
+    st.error(f"❌ Error reading file: {e}")
