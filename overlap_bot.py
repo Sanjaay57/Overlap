@@ -19,19 +19,17 @@ col4, col5, col6 = st.columns([1, 2, 1])
 with col5:
     uploaded_file = st.file_uploader("📤 Upload Excel File", type=["xlsx"], label_visibility="visible")
 
-# === Centered Info Box if no file uploaded ===
+# === Info Box If No File Uploaded ===
 if not uploaded_file:
-    col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.info("📁 Please upload a multi-sheet Excel file to get started.")
     st.stop()
 
-# === File Processing ===
 try:
     all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
     sheet_names = list(all_sheets.keys())
 
-    # === Execute Search ===
+    # === Search Functionality ===
     if search_query:
         found_in = []
         for sheet_name, df in all_sheets.items():
@@ -51,25 +49,17 @@ try:
 
     st.divider()
 
-    # === Sidebar Comparison UI ===
+    # === Sidebar for Comparison Options ===
     st.sidebar.header("🔧 Sheet Comparison")
     main_sheet = st.sidebar.selectbox("🧩 Sheet to Check (e.g., MSE)", sheet_names)
-
+    compare_mode = st.sidebar.selectbox("🔽 Compare Mode", ["Compare with All Sheets", "Select Sheets Manually"])
     available_compare_sheets = [s for s in sheet_names if s != main_sheet]
 
-    compare_mode = st.sidebar.selectbox(
-        "🔽 Compare Mode",
-        ["Compare with All Sheets", "Select Sheets Manually"]
+    selected_sheets = (
+        st.sidebar.multiselect("📌 Select Sheets to Compare", options=available_compare_sheets, default=[])
+        if compare_mode == "Select Sheets Manually"
+        else available_compare_sheets
     )
-
-    if compare_mode == "Select Sheets Manually":
-        selected_sheets = st.sidebar.multiselect(
-            "📌 Select Sheets to Compare",
-            options=available_compare_sheets,
-            default=[]
-        )
-    else:
-        selected_sheets = available_compare_sheets  # All except the main sheet
 
     # === Comparison Logic ===
     if st.sidebar.button("🔍 Compare Now"):
@@ -79,13 +69,11 @@ try:
             st.error("❌ The main sheet must have at least 2 columns (EMIS and Name).")
         else:
             emis_col = main_df.columns[0]
-            name_col = main_df.columns[2] if main_df.shape[1] > 2 else main_df.columns[1]
-
             main_df[emis_col] = main_df[emis_col].apply(
                 lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
             )
 
-            result_df = main_df[[emis_col, name_col]].copy()
+            # Track matches
             match_found = []
 
             for sheet in selected_sheets:
@@ -96,29 +84,28 @@ try:
                         lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
                     )
                     compare_values = set(comp_df[comp_emis_col].values)
-                    result_df[sheet] = result_df[emis_col].apply(lambda x: x if x in compare_values else None)
-                    match_found.append(result_df[sheet].notna())
+                    match_found.append(main_df[emis_col].isin(compare_values))
 
             if match_found:
-                result_df["Overlap Status"] = pd.concat(match_found, axis=1).any(axis=1).map({
+                main_df["Overlap Status"] = pd.concat(match_found, axis=1).any(axis=1).map({
                     True: "Overlapped", False: "Unique"
                 })
             else:
-                result_df["Overlap Status"] = "Unique"
+                main_df["Overlap Status"] = "Unique"
 
-            # Reset index to start at 1 for display and Excel
-            result_df.index = range(1, len(result_df) + 1)
+            # Reset index for display
+            main_df.index = range(1, len(main_df) + 1)
 
             st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
-            st.dataframe(result_df, use_container_width=True)
+            st.dataframe(main_df, use_container_width=True)
 
-            # === Export to Excel with Auto Column Width ===
+            # === Export to Excel ===
             output = BytesIO()
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = "Overlap Result"
 
-            for r in dataframe_to_rows(result_df.reset_index(), index=False, header=True):
+            for r in dataframe_to_rows(main_df.reset_index(), index=False, header=True):
                 ws.append(r)
 
             for col in ws.columns:
@@ -130,7 +117,7 @@ try:
             st.download_button(
                 "📥 Download Overlap Result",
                 data=output.getvalue(),
-                file_name=f"{main_sheet}_vs_overlap.xlsx"
+                file_name=f"{main_sheet}_overlap_result.xlsx"
             )
 
 except Exception as e:
