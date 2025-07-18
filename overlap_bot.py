@@ -5,133 +5,96 @@ import openpyxl
 from openpyxl.utils.dataframe import dataframe_to_rows
 
 # === UI Setup ===
-st.set_page_config(page_title="TN Model Schools Overlap Bot", layout="wide")
-st.markdown("<h1 style='text-align: center;'>TN Model Schools Student Overlap</h1>", unsafe_allow_html=True)
+st.set_page_config(page_title="TN Model Schools MS Number Check", layout="wide")
+st.markdown("<h1 style='text-align: center;'>TN Model Schools MS Number Verification</h1>", unsafe_allow_html=True)
 st.markdown("<h4 style='text-align: center; color: gray;'>MS CG Team</h4>", unsafe_allow_html=True)
 
-# === Centered Search Box ===
+# === Centered File Upload ===
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    search_query = st.text_input("🔍 Search by EMIS / Name", placeholder="Enter EMIS number or Name")
-
-# === Centered File Upload ===
-col4, col5, col6 = st.columns([1, 2, 1])
-with col5:
-    uploaded_file = st.file_uploader("📤 Upload Excel File", type=["xlsx"], label_visibility="visible")
+    uploaded_file = st.file_uploader("📤 Upload Excel File (with main sheet & new MS numbers)", type=["xlsx"])
 
 # === Centered Info Box if no file uploaded ===
 if not uploaded_file:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.info("📁 Please upload a multi-sheet Excel file to get started.")
+        st.info("📁 Please upload the Excel file to continue.")
     st.stop()
 
-# === File Processing ===
 try:
     all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
     sheet_names = list(all_sheets.keys())
 
-    # === Execute Search ===
-    if search_query:
-        found_in = []
-        for sheet_name, df in all_sheets.items():
-            if df.empty or df.shape[1] == 0:
-                continue
-            search_col = df.columns[0]
-            values = df[search_col].dropna().apply(
-                lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
-            )
-            if search_query.strip() in values.values:
-                found_in.append(sheet_name)
+    # === Sidebar Selection ===
+    st.sidebar.header("🔍 Sheet Selection")
+    main_sheet = st.sidebar.selectbox("📘 Main Sheet (All Joined Students)", sheet_names)
+    new_sheet = st.sidebar.selectbox("🆕 Sheet with New MS Numbers", [s for s in sheet_names if s != main_sheet])
 
-        if found_in:
-            st.success(f"✅ '{search_query}' found in: {', '.join(found_in)}")
-        else:
-            st.warning(f"❌ '{search_query}' not found in any sheet")
-
-    st.divider()
-
-    # === Sidebar Comparison UI ===
-    st.sidebar.header("🔧 Sheet Comparison")
-    main_sheet = st.sidebar.selectbox("🧩 Sheet to Check (e.g., MSE)", sheet_names)
-
-    available_compare_sheets = [s for s in sheet_names if s != main_sheet]
-
-    compare_mode = st.sidebar.selectbox(
-        "🔽 Compare Mode",
-        ["Compare with All Sheets", "Select Sheets Manually"]
-    )
-
-    if compare_mode == "Select Sheets Manually":
-        selected_sheets = st.sidebar.multiselect(
-            "📌 Select Sheets to Compare",
-            options=available_compare_sheets,
-            default=[]
-        )
-    else:
-        selected_sheets = available_compare_sheets  # All except the main sheet
-
-    # === Comparison Logic ===
-    if st.sidebar.button("🔍 Compare Now"):
+    if st.sidebar.button("🔎 Check for Missing MS Numbers"):
         main_df = all_sheets[main_sheet].copy()
+        new_df = all_sheets[new_sheet].copy()
 
-        if main_df.empty or main_df.shape[1] < 2:
-            st.error("❌ The main sheet must have at least 2 columns (EMIS and Name).")
-        else:
-            emis_col = main_df.columns[0]
-            name_col = main_df.columns[2] if main_df.shape[1] > 2 else main_df.columns[1]
+        # Clean columns and MS Numbers
+        main_df.columns = main_df.columns.str.strip()
+        new_df.columns = new_df.columns.str.strip()
 
-            main_df[emis_col] = main_df[emis_col].apply(
-                lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
-            )
+        main_ms_col = main_df.columns[1]  # Assuming MS Number is 2nd column
+        new_ms_col = new_df.columns[0]    # Assuming MS Number is 1st column
 
-            result_df = main_df[[emis_col, name_col]].copy()
-            match_found = []
+        main_df[main_ms_col] = main_df[main_ms_col].apply(
+            lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
+        )
+        new_df[new_ms_col] = new_df[new_ms_col].apply(
+            lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
+        )
 
-            for sheet in selected_sheets:
-                comp_df = all_sheets.get(sheet, pd.DataFrame())
-                if not comp_df.empty and comp_df.shape[1] > 0:
-                    comp_emis_col = comp_df.columns[0]
-                    comp_df[comp_emis_col] = comp_df[comp_emis_col].dropna().apply(
-                        lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
-                    )
-                    compare_values = set(comp_df[comp_emis_col].values)
-                    result_df[sheet] = result_df[emis_col].apply(lambda x: x if x in compare_values else None)
-                    match_found.append(result_df[sheet].notna())
+        # Compare MS numbers
+        main_ms_set = set(main_df[main_ms_col].dropna())
+        new_ms_set = set(new_df[new_ms_col].dropna())
+        missing_ms = new_ms_set - main_ms_set
 
-            if match_found:
-                result_df["Overlap Status"] = pd.concat(match_found, axis=1).any(axis=1).map({
-                    True: "Overlapped", False: "Unique"
-                })
-            else:
-                result_df["Overlap Status"] = "Unique"
+        # Prepare Missing MS Table
+        missing_df = new_df[new_df[new_ms_col].isin(missing_ms)].copy()
+        missing_df.rename(columns={new_ms_col: "MS Number"}, inplace=True)
 
-            # Reset index to start at 1 for display and Excel
-            result_df.index = range(1, len(result_df) + 1)
+        # Prepare lookup from main sheet for student info
+        lookup_df = main_df.set_index(main_ms_col)
+        get_value = lambda x, col: lookup_df[col][x] if x in lookup_df.index and col in lookup_df else "❌ Not Found"
 
-            st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
-            st.dataframe(result_df, use_container_width=True)
+        # Add Info Columns
+        missing_df["Student Name"] = missing_df["MS Number"].apply(lambda x: get_value(x, "Student Name"))
+        missing_df["District"] = missing_df["MS Number"].apply(lambda x: get_value(x, "District"))
+        missing_df["Institution Name"] = missing_df["MS Number"].apply(lambda x: get_value(x, "Institution Name"))
+        missing_df["Campus"] = missing_df["MS Number"].apply(lambda x: get_value(x, "Campus"))
+        missing_df["Course"] = missing_df["MS Number"].apply(lambda x: get_value(x, "Course"))
 
-            # === Export to Excel with Auto Column Width ===
-            output = BytesIO()
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "Overlap Result"
+        # Final Display
+        display_df = missing_df[["MS Number", "Student Name", "District", "Institution Name", "Campus", "Course"]]
+        display_df.index = range(1, len(display_df) + 1)
 
-            for r in dataframe_to_rows(result_df.reset_index(), index=False, header=True):
-                ws.append(r)
+        st.warning(f"⚠️ Found {len(display_df)} MS Number(s) not present in the main sheet.")
+        st.dataframe(display_df, use_container_width=True)
 
-            for col in ws.columns:
-                max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
-                ws.column_dimensions[col[0].column_letter].width = max_length + 2
+        # === Excel Download ===
+        output = BytesIO()
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Missing MS Numbers"
 
-            wb.save(output)
+        for r in dataframe_to_rows(display_df.reset_index(), index=False, header=True):
+            ws.append(r)
 
-            st.download_button(
-                "📥 Download Overlap Result",
-                data=output.getvalue(),
-                file_name=f"{main_sheet}_vs_overlap.xlsx"
-            )
+        for col in ws.columns:
+            max_len = max(len(str(cell.value)) if cell.value is not None else 0 for cell in col)
+            ws.column_dimensions[col[0].column_letter].width = max_len + 2
+
+        wb.save(output)
+
+        st.download_button(
+            "📥 Download Missing MS Numbers",
+            data=output.getvalue(),
+            file_name="missing_ms_numbers.xlsx"
+        )
 
 except Exception as e:
-    st.error(f"❌ Error reading file: {e}")
+    st.error(f"❌ Error: {e}")
