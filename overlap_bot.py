@@ -29,7 +29,7 @@ try:
     all_sheets = pd.read_excel(uploaded_file, sheet_name=None)
     sheet_names = list(all_sheets.keys())
 
-    # === Search Box Logic ===
+    # === Search Functionality ===
     if search_query:
         found_in = []
         for sheet_name, df in all_sheets.items():
@@ -49,63 +49,50 @@ try:
 
     st.divider()
 
-    # === Sidebar Comparison Options ===
+    # === Sidebar Selection ===
     st.sidebar.header("🔧 Sheet Comparison")
-    main_sheet = st.sidebar.selectbox("🧩 Main Sheet (with full data)", sheet_names)
+    test_sheet = st.sidebar.selectbox("🧪 Test Sheet (shortlist)", sheet_names)
+    main_sheet = st.sidebar.selectbox("📘 Main Sheet (with full details)", [s for s in sheet_names if s != test_sheet])
 
-    compare_mode = st.sidebar.selectbox("🔽 Compare Mode", ["Compare with All Sheets", "Select Sheets Manually"])
-    available_compare_sheets = [s for s in sheet_names if s != main_sheet]
-
-    selected_sheets = (
-        st.sidebar.multiselect("📌 Select Sheets to Compare", options=available_compare_sheets, default=[])
-        if compare_mode == "Select Sheets Manually"
-        else available_compare_sheets
-    )
-
-    # === Compare Logic ===
+    # === Comparison Logic ===
     if st.sidebar.button("🔍 Compare Now"):
+        test_df = all_sheets[test_sheet].copy()
         main_df = all_sheets[main_sheet].copy()
 
-        if main_df.empty or 'EMIS No' not in main_df.columns:
-            st.error("❌ Main sheet must have 'EMIS No' column.")
+        if 'EMIS No' not in test_df.columns or 'EMIS No' not in main_df.columns:
+            st.error("❌ Both sheets must contain an 'EMIS No' column.")
         else:
-            # Clean EMIS No in main sheet
+            # Standardize EMIS No
+            test_df['EMIS No'] = test_df['EMIS No'].dropna().apply(
+                lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
+            )
             main_df['EMIS No'] = main_df['EMIS No'].dropna().apply(
                 lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
             )
 
-            # Collect all EMIS from selected sheets
-            all_emis = set()
-            for sheet in selected_sheets:
-                comp_df = all_sheets.get(sheet, pd.DataFrame())
-                if 'EMIS No' in comp_df.columns:
-                    comp_df['EMIS No'] = comp_df['EMIS No'].dropna().apply(
-                        lambda x: str(int(x)) if isinstance(x, float) and x.is_integer() else str(x).strip()
-                    )
-                    all_emis.update(comp_df['EMIS No'].values)
+            # Merge Test with Main on EMIS No
+            merged_df = test_df[['EMIS No']].merge(main_df, on='EMIS No', how='left')
 
             # Add Overlap Status
-            main_df['Overlap Status'] = main_df['EMIS No'].apply(
-                lambda x: 'Overlapped' if x in all_emis else 'Unique'
+            merged_df['Overlap Status'] = merged_df['Student Name'].apply(
+                lambda x: 'Overlapped' if pd.notna(x) else 'Not Found'
             )
 
-            # Sort: Overlapped on top
-            main_df.sort_values(by='Overlap Status', ascending=True, inplace=True)
+            # Sort: Overlapped first
+            merged_df.sort_values(by='Overlap Status', ascending=True, inplace=True)
+            merged_df.index = range(1, len(merged_df) + 1)
 
-            # Reset index
-            main_df.index = range(1, len(main_df) + 1)
+            # Show Output
+            st.success(f"✅ Compared '{test_sheet}' against '{main_sheet}'")
+            st.dataframe(merged_df, use_container_width=True)
 
-            # Show in Streamlit
-            st.success(f"✅ Compared '{main_sheet}' with: {', '.join(selected_sheets)}")
-            st.dataframe(main_df, use_container_width=True)
-
-            # === Excel Download ===
+            # === Excel Export ===
             output = BytesIO()
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = "Overlap Result"
 
-            for r in dataframe_to_rows(main_df.reset_index(), index=False, header=True):
+            for r in dataframe_to_rows(merged_df.reset_index(), index=False, header=True):
                 ws.append(r)
 
             for col in ws.columns:
@@ -117,7 +104,7 @@ try:
             st.download_button(
                 "📥 Download Overlap Result",
                 data=output.getvalue(),
-                file_name=f"{main_sheet}_overlap_result.xlsx"
+                file_name=f"{test_sheet}_vs_{main_sheet}_overlap.xlsx"
             )
 
 except Exception as e:
